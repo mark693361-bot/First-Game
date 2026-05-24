@@ -94,16 +94,16 @@ Fill in at least 5 items.
 
 | Element | Keep, Change, or Delete? | Why? |
 |---|---|---|
-| Score counter |keep | |
-| Countdown timer | | |
-| Start button | | |
-| Mole pop-up speed | | |
-| Background color / theme | | |
-| Grid size (3x3) | | |
-| Hit feedback (visual) | | |
-| Difficulty curve | | |
-| Sound effects | | |
-| Game over screen | | |
+| Score counter |keep |7 year-olds like to see their scores go up and the need to speed up their speed |
+| Countdown timer |keep |they get hurried-they like to know how much time there is |
+| Start button |delete|not entirely necessary for they can do it by clicking anywhere instead  |
+| Mole pop-up speed |change | should be consistent|
+| Background color / theme | change|should be bright and attracting to the 7 year olds |
+| Grid size (3x3) | keep| good number-not too much nor little for 7 year old brains|
+| Hit feedback (visual) | change|should be attractive with some thing like having a mole go dizzy or a explosion |
+| Difficulty curve |change  |should be gradual |
+| Sound effects |change |should have a squeak |
+| Game over screen |change |be not disappointing for young people and should have encouragement|
 
 ---
 

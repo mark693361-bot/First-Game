@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Whac-a-Mole V3</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Comic Sans MS', 'Chalkboard SE', cursive;
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 16px 16px 40px;
+      transition: background 0.8s;
+      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='%23ff3333' stroke-width='2.5'/%3E%3Cline x1='16' y1='1' x2='16' y2='9' stroke='%23ff3333' stroke-width='2.5'/%3E%3Cline x1='16' y1='23' x2='16' y2='31' stroke='%23ff3333' stroke-width='2.5'/%3E%3Cline x1='1' y1='16' x2='9' y2='16' stroke='%23ff3333' stroke-width='2.5'/%3E%3Cline x1='23' y1='16' x2='31' y2='16' stroke='%23ff3333' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='2' fill='%23ff3333'/%3E%3C/svg%3E") 16 16, crosshair;
+    }
+    body.day    { background: linear-gradient(to bottom, #5BC8F5 0%, #a8dff7 42%, #5DBB63 42%, #3fa34d 100%); }
+    body.sunset { background: linear-gradient(to bottom, #FF6B35 0%, #FF9A5C 40%, #c87941 40%, #a06030 100%); }
+    body.night  { background: linear-gradient(to bottom, #0d0d2e 0%, #1a1a4e 45%, #0d2e10 45%, #071a09 100%); }
+
+    .sky { position: fixed; top: 0; left: 0; right: 0; height: 42%; pointer-events: none; z-index: 0; overflow: hidden; }
+    .sun { position: absolute; top: 15px; right: 55px; width: 65px; height: 65px; background: radial-gradient(circle, #FFE566 40%, #FFD700 100%); border-radius: 50%; box-shadow: 0 0 0 10px rgba(255,220,0,0.2), 0 0 0 20px rgba(255,220,0,0.1); transition: all 0.8s; }
+    body.sunset .sun { top: 50%; right: 12%; background: radial-gradient(circle, #FF9500 40%, #FF5500 100%); box-shadow: 0 0 0 12px rgba(255,100,0,0.2); transform: translateY(-50%); }
+    body.night  .sun { opacity: 0; }
+    .cloud { position: absolute; background: white; border-radius: 50px; transition: opacity 0.8s; }
+    .cloud::before,.cloud::after { content:''; position:absolute; background:white; border-radius:50%; }
+    .c1 { width:80px; height:26px; top:28px; left:50px; }
+    .c1::before { width:36px; height:36px; top:-16px; left:8px; }
+    .c1::after  { width:28px; height:28px; top:-12px; left:36px; }
+    .c2 { width:64px; height:20px; top:55px; left:200px; }
+    .c2::before { width:28px; height:28px; top:-14px; left:6px; }
+    .c2::after  { width:22px; height:22px; top:-9px; left:30px; }
+    body.night .cloud { opacity: 0; }
+    body.sunset .cloud { opacity: 0.5; background: #ffb07c; }
+    body.sunset .cloud::before, body.sunset .cloud::after { background: #ffb07c; }
+    .moon { position:absolute; top:15px; right:55px; width:55px; height:55px; background:#FFFDE7; border-radius:50%; box-shadow:0 0 15px rgba(255,253,200,0.5); opacity:0; transition:opacity 0.8s; }
+    body.night .moon { opacity: 1; }
+    .star-dot { position:absolute; width:3px; height:3px; background:white; border-radius:50%; opacity:0; transition:opacity 0.8s; animation:twinkle 2s ease-in-out infinite; }
+    body.night .star-dot { opacity: 1; }
+    @keyframes twinkle { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+    h1 { position:relative; z-index:1; color:#fff; font-size:2.5rem; text-shadow:3px 3px 0 rgba(0,0,0,0.3); margin-bottom:14px; letter-spacing:2px; }
+    body.night h1 { color:#FFD700; }
+
+    .screen { display:none; flex-direction:column; align-items:center; width:100%; position:relative; z-index:1; }
+    .screen.active { display:flex; }
+
+    /* MENU */
+    .menu-sub { color:rgba(255,255,255,0.9); font-size:1rem; margin-bottom:24px; text-shadow:1px 1px 0 rgba(0,0,0,0.2); }
+    .mode-row { display:flex; gap:18px; flex-wrap:wrap; justify-content:center; }
+    .mode-btn { background:rgba(255,255,255,0.95); border:4px solid transparent; border-radius:20px; padding:18px 24px; width:190px; cursor:pointer; font-family:inherit; text-align:center; box-shadow:0 6px 0 rgba(0,0,0,0.15); transition:transform .1s,box-shadow .1s; }
+    .mode-btn:hover { transform:translateY(-3px); box-shadow:0 9px 0 rgba(0,0,0,0.15); }
+    .mode-btn:active { transform:translateY(3px); box-shadow:0 2px 0 rgba(0,0,0,0.15); }
+    .mode-btn .micon { font-size:2.6rem; display:block; margin-bottom:6px; }
+    .mode-btn .mtitle { font-size:1.15rem; font-weight:bold; color:#222; display:block; margin-bottom:3px; }
+    .mode-btn .mdesc { font-size:0.72rem; color:#666; display:block; }
+    .mode-btn.story { border-color:#4caf50; }
+    .mode-btn.inf   { border-color:#9c27b0; }
+
+    /* INTRO OVERLAY */
+    #intro { position:fixed; inset:0; background:rgba(0,0,0,0.75); display:none; align-items:center; justify-content:center; z-index:1000; }
+    #intro.show { display:flex; }
+    .intro-box { background:#fff; border-radius:24px; padding:28px 36px; text-align:center; max-width:320px; box-shadow:0 20px 40px rgba(0,0,0,0.4); }
+    .il { font-size:0.85rem; color:#888; margin-bottom:3px; }
+    .in { font-size:1.9rem; font-weight:bold; color:#333; margin-bottom:8px; }
+    .id { font-size:0.9rem; color:#555; margin-bottom:14px; line-height:1.5; }
+    .it { background:#FFF3CD; border:2px solid #FFD700; border-radius:10px; padding:8px 16px; font-size:1rem; font-weight:bold; color:#7a5a00; margin-bottom:16px; }
+    .ib { background:#4caf50; color:white; border:none; border-radius:50px; padding:10px 36px; font-size:1.05rem; font-weight:bold; cursor:pointer; font-family:inherit; box-shadow:0 4px 0 #2e7d32; }
+    .ib:hover { background:#43a047; }
+
+    /* HUD */
+    .hud { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-bottom:12px; }
+    .hbox { background:rgba(255,255,255,0.95); border:3px solid #2a6e1a; border-radius:14px; padding:6px 16px; text-align:center; min-width:80px; box-shadow:0 4px 0 rgba(0,0,0,0.15); }
+    body.night .hbox { border-color:#4a80d8; }
+    .hbox .hl { font-size:0.62rem; font-weight:bold; color:#2a6e1a; text-transform:uppercase; letter-spacing:1px; }
+    body.night .hbox .hl { color:#7aaaff; }
+    .hbox .hv { font-size:1.65rem; font-weight:bold; color:#111; }
+    #timer.urgent { color:#e63946; animation:pulse .5s ease-in-out infinite alternate; }
+    @keyframes pulse { from{transform:scale(1)} to{transform:scale(1.2)} }
+
+    /* LEGEND */
+    .legend { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-bottom:10px; }
+    .leg { background:rgba(255,255,255,0.85); border-radius:10px; padding:3px 10px; font-size:0.72rem; font-weight:bold; color:#333; }
+
+    /* LEVEL DOTS */
+    .ldots { display:flex; gap:8px; align-items:center; margin-bottom:10px; }
+    .ldot { width:12px; height:12px; border-radius:50%; background:rgba(255,255,255,0.35); border:2px solid rgba(255,255,255,0.55); }
+    .ldot.done { background:#FFD700; border-color:#FFD700; }
+    .ldot.cur  { background:white; border-color:white; }
+
+    /* GRID & HOLES */
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-bottom:14px; }
+    .hw { position:relative; width:125px; height:120px; }
+    .hole { position:absolute; top:10px; left:0; width:125px; height:85px; border-radius:50%; background:radial-gradient(ellipse at 50% 35%,#3b1600 0%,#100600 80%); overflow:hidden; box-shadow:0 5px 0 5px #9c6c1e,0 10px 0 8px #7a520e,0 15px 0 9px #5a3c0c,inset 0 10px 20px rgba(0,0,0,0.7); }
+    body.night .hole { background:radial-gradient(ellipse at 50% 35%,#1a1a3a 0%,#050510 80%); box-shadow:0 5px 0 5px #2a2a5a,0 10px 0 8px #1a1a3e,0 15px 0 9px #0d0d28,inset 0 10px 20px rgba(0,0,0,0.8); }
+    .mc { position:absolute; bottom:-96px; left:50%; transform:translateX(-50%); width:92px; height:96px; transition:bottom .13s ease-out; pointer-events:none; cursor:crosshair; }
+    .mc svg { pointer-events:none; display:block; }
+    .hole.active .mc { bottom:0; pointer-events:auto; animation:molePop .2s ease-out forwards; }
+    @keyframes molePop { 0%{transform:translateX(-50%) scale(0.5)} 65%{transform:translateX(-50%) scale(1.13)} 100%{transform:translateX(-50%) scale(1)} }
+    @keyframes scorePop { 0%{transform:scale(1)} 40%{transform:scale(1.5) rotate(-4deg)} 100%{transform:scale(1)} }
+    .score-pop { animation:scorePop .25s ease-out; }
+    @keyframes confettiFall { 0%{transform:translateY(0) rotate(0deg);opacity:1} 100%{transform:translateY(110vh) rotate(720deg);opacity:0} }
+
+    /* PARTICLES */
+    .pt { position:fixed; border-radius:50%; pointer-events:none; z-index:999; transform:translate(-50%,-50%); animation:ptfly .55s ease-out forwards; }
+    @keyframes ptfly { 0%{transform:translate(-50%,-50%) translate(0,0) scale(1.2);opacity:1} 100%{transform:translate(-50%,-50%) translate(var(--dx),var(--dy)) scale(0);opacity:0} }
+    .mflash { position:fixed; pointer-events:none; z-index:998; width:28px; height:28px; transform:translate(-50%,-50%); background:radial-gradient(circle,#fff 0%,#FFD700 40%,transparent 70%); border-radius:50%; animation:mfade .15s ease-out forwards; }
+    @keyframes mfade { 0%{transform:translate(-50%,-50%) scale(.5);opacity:1} 100%{transform:translate(-50%,-50%) scale(2);opacity:0} }
+    .htxt,.btxt { position:fixed; pointer-events:none; z-index:1000; font-size:1.75rem; font-weight:bold; text-shadow:2px 2px 0 #000,-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000; animation:fup .75s ease-out forwards; white-space:nowrap; }
+    .htxt { color:#FFD700; }
+    .btxt { color:#ff4444; }
+    @keyframes fup { 0%{transform:translate(-50%,-50%) scale(.7) rotate(-8deg);opacity:1} 50%{transform:translate(-50%,-80%) scale(1.1) rotate(5deg);opacity:1} 100%{transform:translate(-50%,-150%) scale(.8) rotate(-3deg);opacity:0} }
+    .ann { position:fixed; top:50%; left:50%; z-index:800; pointer-events:none; font-size:2.1rem; font-weight:bold; color:#fff; text-shadow:3px 3px 0 rgba(0,0,0,.45); animation:annim 1.1s ease-out forwards; }
+    @keyframes annim { 0%{transform:translate(-50%,-50%) scale(0);opacity:0} 25%{transform:translate(-50%,-50%) scale(1.3);opacity:1} 65%{transform:translate(-50%,-50%) scale(1);opacity:1} 100%{transform:translate(-50%,-50%) scale(1);opacity:0} }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px) rotate(-1deg)} 40%{transform:translateX(8px) rotate(1deg)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
+    body.shake { animation:shake .4s ease-out; }
+    #fov { position:fixed; inset:0; pointer-events:none; z-index:990; opacity:0; transition:opacity .1s; }
+    #fov.show { opacity:.4; }
+
+    /* RESULT */
+    .rbox { background:rgba(255,255,255,.97); border-radius:24px; padding:28px 36px; text-align:center; max-width:340px; width:90%; box-shadow:0 20px 40px rgba(0,0,0,.3); }
+    .rbox.win  { background:linear-gradient(135deg,#fffde7 0%,#e8f5e9 100%); }
+    .rbox.lose { background:linear-gradient(135deg,#fff8f0 0%,#fce4ec 100%); }
+    .rico { font-size:3.5rem; margin-bottom:6px; }
+    .rtit { font-size:1.9rem; font-weight:bold; color:#333; margin-bottom:5px; }
+    .rsc  { font-size:1rem; color:#555; margin-bottom:5px; }
+    .renc { font-size:1.05rem; font-weight:bold; color:#e65100; margin-bottom:8px; }
+    .rst  { font-size:2rem; margin-bottom:12px; letter-spacing:5px; }
+    .rbs  { font-size:.85rem; color:#888; margin-bottom:16px; }
+    .rbtns { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+    .rbtn { padding:10px 22px; border:none; border-radius:50px; font-size:.95rem; font-weight:bold; cursor:pointer; font-family:inherit; box-shadow:0 4px 0 rgba(0,0,0,.2); transition:transform .1s,box-shadow .1s; }
+    .rbtn:hover { transform:translateY(-2px); box-shadow:0 6px 0 rgba(0,0,0,.2); }
+    .rbtn:active { transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,0,.2); }
+    .bp { background:#4caf50; color:white; }
+    .bs { background:#eee; color:#333; }
+  </style>
+</head>
+<body class="day">
+
+<div class="sky">
+  <div class="sun"></div>
+  <div class="cloud c1"></div>
+  <div class="cloud c2"></div>
+  <div class="moon"></div>
+  <div id="stars"></div>
+</div>
+<div id="fov"></div>
+
+<div id="intro">
+  <div class="intro-box">
+    <div class="il" id="il"></div>
+    <div class="in" id="in"></div>
+    <div class="id" id="id"></div>
+    <div class="it" id="it"></div>
+    <button class="ib" id="ib">Let's Go! 🎯</button>
+  </div>
+</div>
+
+<h1>🔫 Whac-a-Mole V3</h1>
+
+<!-- MENU -->
+<div id="smenu" class="screen active">
+  <div class="menu-sub">Choose your adventure!</div>
+  <div class="mode-row">
+    <button class="mode-btn story" id="bstory">
+      <span class="micon">📖</span>
+      <span class="mtitle">Story Mode</span>
+      <span class="mdesc">3 levels · beat the targets</span>
+    </button>
+    <button class="mode-btn inf" id="binf">
+      <span class="micon">♾️</span>
+      <span class="mtitle">Infinite Mode</span>
+      <span class="mdesc">3 lives · survive forever</span>
+    </button>
+  </div>
+</div>
+
+<!-- GAME -->
+<div id="sgame" class="screen">
+  <div class="ldots" id="ldots" style="display:none">
+    <div class="ldot" id="ld0"></div>
+    <div class="ldot" id="ld1"></div>
+    <div class="ldot" id="ld2"></div>
+  </div>
+  <div class="hud">
+    <div class="hbox"><div class="hl">Score</div><div class="hv" id="score">0</div></div>
+    <div class="hbox" id="htimer"><div class="hl">Time</div><div class="hv" id="timer">30</div></div>
+    <div class="hbox" id="htarget" style="display:none"><div class="hl">Target</div><div class="hv" id="tval">0</div></div>
+    <div class="hbox" id="hlives"  style="display:none"><div class="hl">Lives</div><div class="hv" id="lval">♥♥♥</div></div>
+    <div class="hbox" id="hwave"   style="display:none"><div class="hl">Wave</div><div class="hv" id="wval">1</div></div>
+  </div>
+  <div class="legend">
+    <div class="leg">🟤 Normal = 1pt</div>
+    <div class="leg" id="lleg" style="display:none">⭐ Golden = 5pt</div>
+    <div class="leg" id="bleg" style="display:none">💣 Bomb = penalty</div>
+    <div class="leg" id="hleg" style="display:none">⛑️ Helmet = 3pt (2 hits)</div>
+  </div>
+  <div class="grid" id="grid"></div>
+</div>
+
+<!-- RESULT -->
+<div id="sresult" class="screen">
+  <div class="rbox" id="rbox">
+    <div class="rico" id="rico"></div>
+    <div class="rtit" id="rtit"></div>
+    <div class="rsc"  id="rsc"></div>
+    <div class="renc" id="renc"></div>
+    <div class="rst"  id="rst"></div>
+    <div class="rbs"  id="rbs"></div>
+    <div class="rbtns" id="rbtns"></div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+const STORY = [
+  { name:'Down on the Farm',  desc:'Moles are invading! Hit them all!',              dur:30, tgt:8,  w:{normal:100,golden:0, bomb:0, helmet:0 }, mn:1000, mx:1150, theme:'day'    },
+  { name:'Golden Rush',       desc:'Golden moles = 5pts. Watch out for bombs! 💣',  dur:30, tgt:20, w:{normal:55, golden:25,bomb:15,helmet:5 }, mn:780,  mx:920,  theme:'sunset' },
+  { name:'Night Raid',        desc:'All moles, maximum chaos! Reach the target!',   dur:25, tgt:28, w:{normal:40, golden:20,bomb:20,helmet:20}, mn:580,  mx:700,  theme:'night'  },
+];
+const WAVES = [
+  { next:12, mn:1000, mx:1150, w:{normal:85,golden:10,bomb:5, helmet:0 }, lbl:'Wave 2 - Speeding Up! ⚡' },
+  { next:15, mn:800,  mx:930,  w:{normal:65,golden:20,bomb:10,helmet:5 }, lbl:'Wave 3 - Getting Crazy! 🔥' },
+  { next:18, mn:620,  mx:730,  w:{normal:50,golden:20,bomb:15,helmet:15}, lbl:'Wave 4 - INSANE!! 💀' },
+  { next:20, mn:490,  mx:590,  w:{normal:40,golden:20,bomb:20,helmet:20}, lbl:'Wave 5 - MAX CHAOS!! 👹' },
+  { next:999,mn:410,  mx:500,  w:{normal:30,golden:20,bomb:25,helmet:25}, lbl:'FINAL WAVE 🌋' },
+];
+const INF_START = { mn:1000, mx:1150, w:{normal:85,golden:10,bomb:5,helmet:0} };
+
+const PCOLS = {
+  normal: ['#FF6B35','#FFD700','#FF4500','#FFA500'],
+  golden: ['#FFD700','#FFF700','#FFFACD','#FFC200'],
+  bomb:   ['#FF0000','#FF4444','#8B0000','#CC0000'],
+  helmet: ['#FFD700','#FF8C00','#FFA500','#FF6B35'],
+};
+const WORDS = ['WHACK!','POW!','BONK!','ZAP!','SMASH!','BAM!'];
+
+// ── STATE ───────────────────────────────────────────────────────────────────
+let mode,running,score,totalScore,timeLeft,lives,lvlIdx,waveIdx,waveHits;
+let countdown=null, lastHole=null;
+const hd=[]; // hole data array
+
+const bestS=()=>parseInt(localStorage.getItem('v3s')||'0');
+const bestI=()=>parseInt(localStorage.getItem('v3i')||'0');
+
+// ── DOM ──────────────────────────────────────────────────────────────────────
+const scoreEl=document.getElementById('score');
+const timerEl=document.getElementById('timer');
+const tvalEl =document.getElementById('tval');
+const lvalEl =document.getElementById('lval');
+const wvalEl =document.getElementById('wval');
+const fov    =document.getElementById('fov');
+
+// ── STARS ────────────────────────────────────────────────────────────────────
+(()=>{
+  const c=document.getElementById('stars');
+  for(let i=0;i<35;i++){
+    const s=document.createElement('div');
+    s.className='star-dot';
+    s.style.cssText=`left:${Math.random()*100}%;top:${Math.random()*100}%;animation-delay:${Math.random()*2}s`;
+    c.appendChild(s);
+  }
+})();
+
+// ── AUDIO ────────────────────────────────────────────────────────────────────
+let actx=null;
+function ac(){
+  if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();
+  if(actx.state==='suspended')actx.resume();
+  return actx;
+}
+function beep(s,e,dur,vol,type='sine',off=0){
+  try{
+    const c=ac(),o=c.createOscillator(),g=c.createGain();
+    o.connect(g);g.connect(c.destination);
+    o.type=type;
+    o.frequency.setValueAtTime(s,c.currentTime+off);
+    if(e)o.frequency.exponentialRampToValueAtTime(e,c.currentTime+off+dur);
+    g.gain.setValueAtTime(vol,c.currentTime+off);
+    g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+off+dur);
+    o.start(c.currentTime+off);o.stop(c.currentTime+off+dur+.01);
+  }catch(_){}
+}
+const sndShoot  =()=>beep(1200,200,.1,.15);
+const sndNormal =()=>{ beep(400,1100,.06,.2); beep(1100,350,.08,.18,'sine',.05); };
+const sndGolden =()=>{beep(800,1600,.1,.2,'square');beep(600,1200,.15,.15,'sine',.07);};
+const sndBomb   =()=>beep(150,60,.4,.3,'sawtooth');
+const sndClang  =()=>beep(400,300,.15,.2,'square');
+const sndLife   =()=>[440,330,220].forEach((f,i)=>beep(f,null,.2,.2,'sine',i*.14));
+const sndLevelUp=()=>[523,659,784,1047].forEach((f,i)=>beep(f,null,.1,.15,'square',i*.09));
+const sndOver   =()=>[440,392,349,262].forEach((f,i)=>beep(f,null,.2,.2,'sine',i*.15));
+const sndWin    =()=>[523,659,784,1047,784,1047,1319].forEach((f,i)=>beep(f,null,.12,.2,'sine',i*.1));
+
+// ── SVG MOLES ────────────────────────────────────────────────────────────────
+function mkSVG(body,tummy,eyes,extras,hat=''){
+  return `<svg viewBox="0 0 92 96" width="92" height="96" xmlns="http://www.w3.org/2000/svg">
+    ${hat}
+    <ellipse cx="46" cy="64" rx="38" ry="37" fill="${body}"/>
+    <ellipse cx="46" cy="70" rx="25" ry="25" fill="${tummy}"/>
+    <ellipse cx="18" cy="26" rx="12" ry="15" fill="${body}"/>
+    <ellipse cx="18" cy="26" rx="7" ry="10" fill="#D4899A"/>
+    <ellipse cx="74" cy="26" rx="12" ry="15" fill="${body}"/>
+    <ellipse cx="74" cy="26" rx="7" ry="10" fill="#D4899A"/>
+    ${eyes}
+    <ellipse cx="46" cy="58" rx="15" ry="10" fill="${tummy}"/>
+    <ellipse cx="46" cy="53" rx="7" ry="5" fill="#E5697A"/>
+    ${extras}
+    <ellipse cx="18" cy="58" rx="8" ry="5" fill="#FFB3C1" opacity="0.6"/>
+    <ellipse cx="74" cy="58" rx="8" ry="5" fill="#FFB3C1" opacity="0.6"/>
+  </svg>`;
+}
+const eNormal=`<circle cx="30" cy="44" r="10" fill="white"/><circle cx="62" cy="44" r="10" fill="white"/>
+  <circle cx="32" cy="44" r="6" fill="#111"/><circle cx="64" cy="44" r="6" fill="#111"/>
+  <circle cx="34" cy="42" r="2.5" fill="white"/><circle cx="66" cy="42" r="2.5" fill="white"/>`;
+const eDead=`<text x="30" y="50" font-size="15" text-anchor="middle" fill="#333">✕</text>
+  <text x="62" y="50" font-size="15" text-anchor="middle" fill="#333">✕</text>`;
+const eDizzy=`<circle cx="30" cy="44" r="10" fill="white"/><circle cx="62" cy="44" r="10" fill="white"/>
+  <text x="30" y="50" font-size="13" text-anchor="middle" fill="#333">@</text>
+  <text x="62" y="50" font-size="13" text-anchor="middle" fill="#333">@</text>`;
+const mSmile=`<path d="M 36 65 Q 46 72 56 65" stroke="#6B4226" stroke-width="2.5" fill="none" stroke-linecap="round"/>`;
+const mSad  =`<path d="M 36 69 Q 46 63 56 69" stroke="#555" stroke-width="2.5" fill="none" stroke-linecap="round"/>`;
+
+function svgNormal(dead){
+  return mkSVG('#6B4226','#C4956A',dead?eDead:eNormal,
+    dead?`${mSad}<text x="46" y="24" font-size="17" text-anchor="middle" fill="#FFD700">★</text>`:mSmile);
+}
+function svgGolden(dead){
+  const sp=dead?`<text x="46" y="22" font-size="20" text-anchor="middle">💰</text>`
+               :`<text x="10" y="20" font-size="11">✨</text><text x="70" y="18" font-size="13">✨</text><text x="46" y="10" font-size="10">⭐</text>`;
+  return mkSVG('#C8960C','#FFE28A',dead?eDead:eNormal,
+    (dead?mSad:mSmile)+sp);
+}
+function svgBomb(dead){
+  const ey=dead?eDead:`<text x="30" y="51" font-size="14" text-anchor="middle" fill="#ff3333">💀</text>
+    <text x="62" y="51" font-size="14" text-anchor="middle" fill="#ff3333">💀</text>`;
+  const fuse=dead?'':`<line x1="46" y1="27" x2="52" y2="13" stroke="#555" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="53" cy="12" r="4" fill="#FF6600"/><circle cx="53" cy="12" r="2" fill="#FFD700"/>`;
+  return mkSVG('#2a2a2a','#444',ey,
+    `<path d="M 36 66 Q 46 60 56 66" stroke="#666" stroke-width="2.5" fill="none" stroke-linecap="round"/>` +
+    (dead?`<text x="46" y="24" font-size="17" text-anchor="middle">💥</text>`:''), fuse);
+}
+function svgHelmet(hp,dead){
+  const hc=hp===2?'#FFD700':'#b8a010';
+  const crack=hp===1?`<path d="M 38 4 L 42 10 L 38 16" stroke="#333" stroke-width="2" fill="none"/>`:'' ;
+  const hat=`<ellipse cx="46" cy="22" rx="36" ry="14" fill="${hc}"/>
+    <rect x="10" y="20" width="72" height="8" rx="4" fill="${hp===2?'#e6c400':'#9a8800'}"/>${crack}`;
+  const ey=dead?eDead:hp===1?eDizzy:eNormal;
+  const mo=dead?mSad:hp===1?`<path d="M 36 66 Q 46 61 56 66" stroke="#6B4226" stroke-width="2.5" fill="none" stroke-linecap="round"/>`:mSmile;
+  return mkSVG('#6B4226','#C4956A',ey,mo+(dead?`<text x="46" y="18" font-size="13" text-anchor="middle">💫</text>`:''),hat);
+}
+function getMole(type,hp=1,dead=false){
+  if(type==='golden') return svgGolden(dead);
+  if(type==='bomb')   return svgBomb(dead);
+  if(type==='helmet') return svgHelmet(hp,dead);
+  return svgNormal(dead);
+}
+
+// ── EFFECTS ──────────────────────────────────────────────────────────────────
+function explode(x,y,type,n=10){
+  const cols=PCOLS[type]||PCOLS.normal;
+  for(let i=0;i<n;i++){
+    const p=document.createElement('div');
+    p.className='pt';
+    const a=(i/n)*360+Math.random()*20;
+    const d=35+Math.random()*45;
+    p.style.cssText=`left:${x}px;top:${y}px;background:${cols[i%cols.length]};--dx:${Math.cos(a*Math.PI/180)*d}px;--dy:${Math.sin(a*Math.PI/180)*d}px;width:${6+Math.random()*8}px;height:${6+Math.random()*8}px`;
+    document.body.appendChild(p);
+    setTimeout(()=>p.remove(),600);
+  }
+}
+function flash(x,y){
+  const f=document.createElement('div');
+  f.className='mflash';
+  f.style.cssText=`left:${x}px;top:${y}px`;
+  document.body.appendChild(f);
+  setTimeout(()=>f.remove(),200);
+}
+function floatTxt(x,y,txt,cls='htxt'){
+  const el=document.createElement('div');
+  el.className=cls;
+  el.style.cssText=`left:${x+(Math.random()*30-15)}px;top:${y-10}px`;
+  el.textContent=txt;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),800);
+}
+function screenFlash(col){
+  fov.style.background=col;
+  fov.classList.add('show');
+  setTimeout(()=>fov.classList.remove('show'),160);
+}
+function shake(){
+  document.body.classList.add('shake');
+  setTimeout(()=>document.body.classList.remove('shake'),450);
+}
+function announce(txt){
+  const el=document.createElement('div');
+  el.className='ann';el.textContent=txt;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),1200);
+}
+function popScore(){
+  scoreEl.classList.remove('score-pop');
+  void scoreEl.offsetWidth;
+  scoreEl.classList.add('score-pop');
+  setTimeout(()=>scoreEl.classList.remove('score-pop'),260);
+}
+function confetti(n=30){
+  const cols=['#FF6B35','#FFD700','#4caf50','#2196F3','#e91e63','#9c27b0','#00BCD4','#FF5722'];
+  for(let i=0;i<n;i++){
+    const p=document.createElement('div');
+    const size=6+Math.random()*10;
+    p.style.cssText=`position:fixed;top:-20px;left:${Math.random()*100}%;width:${size}px;height:${size}px;background:${cols[Math.floor(Math.random()*cols.length)]};border-radius:${Math.random()>.5?'50%':'2px'};pointer-events:none;z-index:1001;animation:confettiFall ${1.2+Math.random()*1.8}s ease-in forwards ${Math.random()*0.6}s`;
+    document.body.appendChild(p);
+    setTimeout(()=>p.remove(),3000);
+  }
+}
+
+// ── GRID ─────────────────────────────────────────────────────────────────────
+const holes=[];
+const grid=document.getElementById('grid');
+for(let i=0;i<9;i++){
+  const w=document.createElement('div');w.className='hw';
+  const h=document.createElement('div');h.className='hole';h.dataset.i=i;
+  const mc=document.createElement('div');mc.className='mc';mc.dataset.i=i;
+  mc.innerHTML=svgNormal();mc.addEventListener('click',onHit);
+  h.appendChild(mc);w.appendChild(h);grid.appendChild(w);
+  holes.push(h);hd.push({type:'normal',hp:1,active:false,timer:null});
+}
+grid.addEventListener('click',e=>{
+  if(!running)return;
+  if(!e.target.closest('.mc')){flash(e.clientX,e.clientY);sndShoot();}
+});
+
+// ── SPAWN ─────────────────────────────────────────────────────────────────────
+function weighted(w){
+  let tot=Object.values(w).reduce((a,b)=>a+b,0),r=Math.random()*tot;
+  for(const[t,v]of Object.entries(w)){r-=v;if(r<=0)return t;}
+  return 'normal';
+}
+function cfg(){
+  if(mode==='story')return STORY[lvlIdx];
+  if(waveIdx===0)return INF_START;
+  return WAVES[waveIdx-1];
+}
+function rndHole(){
+  let h,s=0;
+  do{h=holes[Math.floor(Math.random()*9)];s++;}
+  while((h===lastHole||hd[h.dataset.i].active)&&s<20);
+  lastHole=h;return h;
+}
+function showMole(){
+  if(!running)return;
+  const hole=rndHole(),idx=+hole.dataset.i,c=cfg();
+  const type=weighted(c.w||c.weights),hp=type==='helmet'?2:1;
+  const dur=c.mn+Math.random()*(c.mx-c.mn);
+  hd[idx]={type,hp,active:true,timer:null};
+  hole.querySelector('.mc').innerHTML=getMole(type,hp);
+  hole.classList.add('active');
+  hd[idx].timer=setTimeout(()=>{
+    if(!hd[idx].active)return;
+    hole.classList.remove('active');
+    hd[idx].active=false;
+    if(mode==='infinite'&&type!=='bomb')loseLife();
+    if(running)showMole();
+  },dur);
+}
+
+// ── HIT ───────────────────────────────────────────────────────────────────────
+function onHit(e){
+  if(!running)return;
+  const idx=+e.currentTarget.dataset.i,hole=holes[idx],mc=e.currentTarget,d=hd[idx];
+  if(!d.active)return;
+  e.stopPropagation();
+  flash(e.clientX,e.clientY);sndShoot();
+  const {type,hp}=d,cx=e.clientX,cy=e.clientY;
+
+  if(type==='bomb'){
+    d.active=false;clearTimeout(d.timer);
+    hole.classList.remove('active');
+    mc.innerHTML=getMole('bomb',1,true);
+    explode(cx,cy,'bomb',12);screenFlash('#ff0000');shake();
+    floatTxt(cx,cy,'OOPS! 💥','btxt');sndBomb();
+    if(mode==='story'){score=Math.max(0,score-2);scoreEl.textContent=score;}
+    else loseLife();
+    setTimeout(()=>{mc.innerHTML=svgNormal();if(running)showMole();},400);
+
+  }else if(type==='helmet'&&hp===2){
+    hd[idx].hp=1;
+    mc.innerHTML=getMole('helmet',1);
+    explode(cx,cy,'helmet',6);
+    floatTxt(cx,cy,'CLANG! ⛑️');sndClang();
+
+  }else{
+    const pts=type==='golden'?5:type==='helmet'?3:1;
+    score+=pts;totalScore+=pts;scoreEl.textContent=score;popScore();
+    d.active=false;clearTimeout(d.timer);
+    hole.classList.remove('active');
+    mc.innerHTML=getMole(type,hp,true);
+    explode(cx,cy,type,type==='golden'?15:12);
+    floatTxt(cx,cy,type==='golden'?'+5 ⭐':type==='helmet'?'+3 ⛑️':WORDS[Math.floor(Math.random()*WORDS.length)]);
+    type==='golden'?sndGolden():sndNormal();
+
+    if(mode==='infinite'){
+      waveHits++;
+      if(waveIdx<WAVES.length&&waveHits>=WAVES[waveIdx].next){
+        waveIdx++;waveHits=0;
+        wvalEl.textContent=waveIdx+1;
+        announce(WAVES[waveIdx-1].lbl);sndLevelUp();
+        updateLegend(WAVES[waveIdx-1].w);
+      }
+    }
+    setTimeout(()=>{mc.innerHTML=svgNormal();if(running)showMole();},400);
+  }
+}
+
+// ── LIVES ─────────────────────────────────────────────────────────────────────
+function updLives(){lvalEl.textContent='♥'.repeat(lives)+'♡'.repeat(Math.max(0,3-lives));}
+function loseLife(){
+  if(!running)return;
+  lives=Math.max(0,lives-1);updLives();sndLife();
+  screenFlash('#FF0000');announce('💔 Life Lost!');
+  if(lives<=0)setTimeout(endInf,400);
+}
+
+// ── RESET ─────────────────────────────────────────────────────────────────────
+function resetHoles(){
+  holes.forEach((h,i)=>{
+    h.classList.remove('active');
+    clearTimeout(hd[i].timer);
+    hd[i].active=false;
+    h.querySelector('.mc').innerHTML=svgNormal();
+  });
+}
+function updateLegend(w){
+  document.getElementById('lleg').style.display=w.golden>0?'':'none';
+  document.getElementById('bleg').style.display=w.bomb>0?'':'none';
+  document.getElementById('hleg').style.display=w.helmet>0?'':'none';
+}
+function setTheme(t){document.body.className=t;}
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ── STORY ─────────────────────────────────────────────────────────────────────
+function startStory(){
+  mode='story';lvlIdx=0;totalScore=0;
+  showScreen('sgame');
+  document.getElementById('htimer').style.display='';
+  document.getElementById('htarget').style.display='';
+  document.getElementById('hlives').style.display='none';
+  document.getElementById('hwave').style.display='none';
+  document.getElementById('ldots').style.display='flex';
+  startLevel();
+}
+function startLevel(){
+  const lv=STORY[lvlIdx];
+  setTheme(lv.theme);updDots();
+  document.getElementById('il').textContent=`Level ${lvlIdx+1} of 3`;
+  document.getElementById('in').textContent=lv.name;
+  document.getElementById('id').textContent=lv.desc;
+  document.getElementById('it').textContent=`🎯 Target: ${lv.tgt} points`;
+  const el=document.getElementById('intro');el.style.display='';el.classList.add('show');
+}
+document.getElementById('ib').addEventListener('click',()=>{
+  const el=document.getElementById('intro');el.classList.remove('show');el.style.display='none';
+  showScreen('sgame');
+  runLevel();
+});
+function runLevel(){
+  const lv=STORY[lvlIdx];
+  score=0;timeLeft=lv.dur;
+  scoreEl.textContent='0';timerEl.textContent=lv.dur;
+  timerEl.classList.remove('urgent');
+  tvalEl.textContent=lv.tgt;
+  updateLegend(lv.w);resetHoles();running=true;
+  showMole();
+  countdown=setInterval(()=>{
+    timeLeft--;timerEl.textContent=timeLeft;
+    if(timeLeft<=10)timerEl.classList.add('urgent');
+    if(timeLeft<=0)endLevel();
+  },1000);
+}
+function endLevel(){
+  running=false;clearInterval(countdown);resetHoles();
+  const lv=STORY[lvlIdx],won=score>=lv.tgt;
+  const stars=score>=lv.tgt*2?3:score>=Math.floor(lv.tgt*1.5)?2:score>=lv.tgt?1:0;
+  if(won){
+    sndLevelUp();confetti();
+    if(lvlIdx<2){
+      showResult('🎉','Level Complete!',`You scored ${score} — target was ${lv.tgt}`,stars,'','',
+        [{t:'Next Level ➡️',c:'bp',a(){lvlIdx++;startLevel();}},
+         {t:'Menu',c:'bs',a:goMenu}],'win');
+    }else{
+      sndWin();confetti(50);
+      const b=bestS();if(totalScore>b)localStorage.setItem('v3s',totalScore);
+      showResult('🏆','YOU WIN!!',`Total: ${totalScore} pts across all 3 levels!`,3,
+        '','Best: '+Math.max(totalScore,b),
+        [{t:'▶ Play Again',c:'bp',a:startStory},{t:'Menu',c:'bs',a:goMenu}],'win');
+    }
+  }else{
+    sndOver();
+    const gap=lv.tgt-score;
+    showResult('⭐','So Close!',`You got ${score} pts — just ${gap} more to go!`,0,
+      'You\'re doing great — give it another shot! 💪','',
+      [{t:'🔁 Try Again',c:'bp',a:startLevel},{t:'Menu',c:'bs',a:goMenu}],'lose');
+  }
+}
+function updDots(){
+  for(let i=0;i<3;i++)document.getElementById(`ld${i}`).className='ldot'+(i<lvlIdx?' done':i===lvlIdx?' cur':'');
+}
+
+// ── INFINITE ──────────────────────────────────────────────────────────────────
+function startInf(){
+  mode='infinite';score=0;totalScore=0;lives=3;waveIdx=0;waveHits=0;
+  showScreen('sgame');
+  document.getElementById('htimer').style.display='none';
+  document.getElementById('htarget').style.display='none';
+  document.getElementById('hlives').style.display='';
+  document.getElementById('hwave').style.display='';
+  document.getElementById('ldots').style.display='none';
+  setTheme('day');updLives();wvalEl.textContent='1';
+  scoreEl.textContent='0';updateLegend(INF_START.w);
+  resetHoles();running=true;showMole();
+}
+function endInf(){
+  running=false;clearInterval(countdown);resetHoles();
+  const b=bestI(),isNew=score>b;
+  if(isNew)localStorage.setItem('v3i',score);
+  sndOver();
+  if(isNew)confetti();
+  showResult(isNew?'🏆':'🌟',isNew?'NEW BEST!':'Awesome Try!',
+    `Wave ${waveIdx+1} · ${score} points`,0,
+    isNew?'You broke your record — amazing! 🎉':'You\'re getting better every time! 💪',
+    `Best: ${isNew?score:b}`,
+    [{t:'▶ Play Again',c:'bp',a:startInf},{t:'Menu',c:'bs',a:goMenu}],isNew?'win':'lose');
+  document.getElementById('htimer').style.display='';
+}
+
+// ── RESULTS ───────────────────────────────────────────────────────────────────
+function showResult(ico,tit,sc,stars,enc,bs,btns,mood=''){
+  showScreen('sresult');
+  const box=document.getElementById('rbox');
+  box.className='rbox'+(mood?' '+mood:'');
+  document.getElementById('rico').textContent=ico;
+  document.getElementById('rtit').textContent=tit;
+  document.getElementById('rsc').textContent=sc;
+  document.getElementById('renc').textContent=enc||'';
+  document.getElementById('rst').textContent=stars>0?'⭐'.repeat(stars)+'☆'.repeat(3-stars):'';
+  document.getElementById('rbs').textContent=bs||'';
+  const c=document.getElementById('rbtns');c.innerHTML='';
+  btns.forEach(({t,c:cl,a})=>{
+    const b=document.createElement('button');
+    b.className=`rbtn ${cl}`;b.textContent=t;b.addEventListener('click',a);
+    c.appendChild(b);
+  });
+}
+function goMenu(){setTheme('day');showScreen('smenu');}
+
+// ── START ─────────────────────────────────────────────────────────────────────
+document.getElementById('bstory').addEventListener('click',startStory);
+document.getElementById('binf').addEventListener('click',startInf);
+</script>
+</body>
+</html>

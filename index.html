@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Lost Pet Finder</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -375,6 +377,86 @@
 
     .guide-tip strong { color: #e8622a; }
 
+    /* ── Browse view toggles ── */
+    .browse-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .view-toggles { display: flex; gap: 6px; }
+
+    .view-toggle {
+      background: none;
+      border: 2px solid #f0c8a0;
+      border-radius: 50px;
+      padding: 6px 14px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      font-family: inherit;
+      color: #7a5030;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .view-toggle:hover { background: #fff0e6; }
+
+    .view-toggle.active {
+      background: linear-gradient(135deg, #e8622a 0%, #f4943a 100%);
+      color: white;
+      border-color: transparent;
+    }
+
+    /* ── Map container ── */
+    #pet-map {
+      display: none;
+      height: 440px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 2px solid #f0c8a0;
+    }
+
+    /* ── Location field row ── */
+    .field-row {
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
+    }
+
+    .field-row input { flex: 1; }
+
+    .btn-locate {
+      background: linear-gradient(135deg, #e8622a 0%, #f4943a 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 0 14px;
+      font-size: 1.1rem;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: opacity 0.15s;
+    }
+
+    .btn-locate:hover   { opacity: 0.85; }
+    .btn-locate:disabled { opacity: 0.5; cursor: default; }
+
+    /* ── Remove listing button ── */
+    .btn-remove {
+      background: none;
+      border: 1.5px solid #e57373;
+      border-radius: 50px;
+      padding: 5px 12px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #c62828;
+      cursor: pointer;
+      width: 100%;
+      transition: all 0.15s;
+    }
+
+    .btn-remove:hover { background: #ffebee; }
+
     footer {
       text-align: center;
       padding: 20px;
@@ -454,6 +536,17 @@
               <label for="extra-details">Extra details</label>
               <textarea id="extra-details" rows="3" placeholder="e.g. fluffy tail, missing one eye"></textarea>
             </div>
+            <div class="field">
+              <label for="last-location">Last seen location</label>
+              <div class="field-row">
+                <input id="last-location" type="text" placeholder="e.g. Central Park, New York" />
+                <button type="button" class="btn-locate" id="btn-locate" onclick="useMyLocation()" title="Use my current location">📍</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="contact">Your contact info</label>
+              <input id="contact" type="text" placeholder="e.g. 555-0123 or email@example.com" />
+            </div>
             <button type="submit" class="btn-primary">Post Missing Pet</button>
           </form>
         </div>
@@ -461,7 +554,15 @@
 
       <!-- Page: Browse Missing Pets -->
       <div class="page" id="page-browse">
+        <div class="browse-header">
+          <h2 style="margin-bottom:0">Missing Pets</h2>
+          <div class="view-toggles">
+            <button class="view-toggle active" id="view-list" onclick="setView('list')">☰ List</button>
+            <button class="view-toggle" id="view-map" onclick="setView('map')">🗺 Map</button>
+          </div>
+        </div>
         <div class="pet-grid" id="pet-grid"></div>
+        <div id="pet-map"></div>
       </div>
 
       <!-- Page: Report Found Pet -->
@@ -653,7 +754,7 @@
       let notifs = JSON.parse(localStorage.getItem('lpf_notifs') || '[]');
       let unread = parseInt(localStorage.getItem('lpf_unread')   || '0');
 
-      function savePets()   { localStorage.setItem('lpf_pets',   JSON.stringify(pets));   }
+      function savePets()   { localStorage.setItem('lpf_pets',   JSON.stringify(pets)); }
       function saveNotifs() {
         localStorage.setItem('lpf_notifs', JSON.stringify(notifs));
         localStorage.setItem('lpf_unread', String(unread));
@@ -710,7 +811,10 @@
         if (navBtn) navBtn.classList.add('active');
         document.getElementById('back-btn').classList.toggle('visible', _history.length > 0);
 
-        if (pageId === 'page-browse') renderPets();
+        const guidePages = ['page-guide-post', 'page-guide-browse', 'page-guide-report'];
+        document.querySelector('.action-cards').style.display = guidePages.includes(pageId) ? 'none' : '';
+
+        if (pageId === 'page-browse') { renderPets(); if (_mapView) renderMap(); }
         if (pageId === 'page-notifs') { unread = 0; saveNotifs(); renderNotifs(); }
       }
 
@@ -729,7 +833,7 @@
       }
 
       document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
-        btn.addEventListener('click', () => { _history = []; goTo(btn.dataset.page); });
+        btn.addEventListener('click', () => { _history = []; _activate(btn.dataset.page); });
       });
 
       // ── Badge ────────────────────────────────────────────────────────────────
@@ -751,6 +855,104 @@
         saveNotifs();
       }
 
+      // ── Map ──────────────────────────────────────────────────────────────────
+      let _map = null;
+      let _mapView = false;
+      let _mapMarkers = [];
+
+      function setView(v) {
+        _mapView = v === 'map';
+        document.getElementById('pet-grid').style.display = _mapView ? 'none' : '';
+        document.getElementById('pet-map').style.display  = _mapView ? 'block' : 'none';
+        document.getElementById('view-list').classList.toggle('active', !_mapView);
+        document.getElementById('view-map').classList.toggle('active',  _mapView);
+        if (_mapView) renderMap();
+      }
+
+      function renderMap() {
+        if (!_map) {
+          _map = L.map('pet-map').setView([20, 0], 2);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 19
+          }).addTo(_map);
+        }
+
+        _mapMarkers.forEach(m => m.remove());
+        _mapMarkers = [];
+
+        const located = pets.filter(p => p.lat && p.lng);
+        if (located.length === 0) {
+          _map.setView([20, 0], 2);
+          return;
+        }
+
+        located.forEach(p => {
+          const i = pets.indexOf(p);
+          const marker = L.marker([p.lat, p.lng]).addTo(_map);
+          marker.bindPopup(`
+            <div style="min-width:155px;font-family:'Segoe UI',Arial,sans-serif">
+              <div style="font-size:1.8rem;line-height:1">${EMOJIS[p.type] || '🐾'}</div>
+              <strong style="font-size:0.95rem">${esc(p.name)}</strong><br>
+              <span style="font-size:0.78rem;color:#7a5030">
+                ${esc(p.type)}${p.colour ? ' · ' + esc(p.colour) : ''}${p.size ? ' · ' + esc(p.size) : ''}
+              </span><br>
+              ${p.details  ? `<span style="font-size:0.82rem">${esc(p.details)}</span><br>` : ''}
+              ${p.contact  ? `<span style="font-size:0.78rem">📞 ${esc(p.contact)}</span><br>` : ''}
+              <span style="font-size:0.75rem;color:#a07050">🕐 ${timeAgo(p.postedAt)}</span>
+              <div style="display:flex;gap:6px;margin-top:8px">
+                <button onclick="markFound(${i})"
+                  style="background:#4caf50;color:white;border:none;padding:5px 10px;border-radius:20px;cursor:pointer;font-size:0.78rem;font-weight:600">
+                  Found 🎉
+                </button>
+                <button onclick="removeListing(${i})"
+                  style="background:#ef5350;color:white;border:none;padding:5px 10px;border-radius:20px;cursor:pointer;font-size:0.78rem;font-weight:600">
+                  Remove
+                </button>
+              </div>
+            </div>
+          `);
+          _mapMarkers.push(marker);
+        });
+
+        const group = L.featureGroup(_mapMarkers);
+        _map.fitBounds(group.getBounds().pad(0.4));
+        setTimeout(() => _map.invalidateSize(), 50);
+      }
+
+      // ── Geolocation ──────────────────────────────────────────────────────────
+      function useMyLocation() {
+        if (!navigator.geolocation) { showToast('Geolocation not supported by this browser', 'info'); return; }
+        const btn = document.getElementById('btn-locate');
+        btn.textContent = '⏳';
+        btn.disabled = true;
+        navigator.geolocation.getCurrentPosition(async pos => {
+          const lat = pos.coords.latitude, lng = pos.coords.longitude;
+          const el = document.getElementById('last-location');
+          el.dataset.lat = lat;
+          el.dataset.lng = lng;
+          try {
+            const res  = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`);
+            const data = await res.json();
+            el.value = data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+          } catch {
+            el.value = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+          }
+          btn.textContent = '📍';
+          btn.disabled = false;
+        }, () => {
+          showToast('Could not get your location', 'info');
+          btn.textContent = '📍';
+          btn.disabled = false;
+        });
+      }
+
+      // Clear cached coords if user manually edits the location field
+      document.getElementById('last-location').addEventListener('input', function () {
+        delete this.dataset.lat;
+        delete this.dataset.lng;
+      });
+
       // ── Pets ─────────────────────────────────────────────────────────────────
       function renderPets() {
         const grid = document.getElementById('pet-grid');
@@ -769,8 +971,12 @@
             <div class="pc-meta">
               ${p.size ? esc(p.size[0].toUpperCase() + p.size.slice(1)) + ' &bull; ' : ''}${esc(p.colour || 'Unknown colour')}
             </div>
-            ${p.details ? `<div class="pc-detail">${esc(p.details)}</div>` : ''}
-            <button class="btn-green" onclick="markFound(${i})">I Found This Pet! 🎉</button>
+            ${p.location ? `<div class="pc-meta">📍 ${esc(p.location)}</div>` : ''}
+            ${p.details  ? `<div class="pc-detail">${esc(p.details)}</div>` : ''}
+            ${p.contact  ? `<div class="pc-meta">📞 ${esc(p.contact)}</div>` : ''}
+            <div class="pc-meta" style="margin-top:4px">🕐 ${timeAgo(p.postedAt)}</div>
+            <button class="btn-green"   onclick="markFound(${i})">I Found This Pet! 🎉</button>
+            <button class="btn-remove"  onclick="removeListing(${i})">✕ Remove listing</button>
           </div>`
         ).join('');
       }
@@ -780,8 +986,19 @@
         pets.splice(i, 1);
         savePets();
         renderPets();
+        if (_mapView) renderMap();
         addNotif('🎉', `${esc(pet.name)} the ${pet.type} has been found and reunited with their family!`);
         showToast(`${pet.name} has been marked as found! 🎉`, 'success');
+      }
+
+      function removeListing(i) {
+        const pet = pets[i];
+        if (!confirm(`Remove the listing for ${pet.name}?`)) return;
+        pets.splice(i, 1);
+        savePets();
+        renderPets();
+        if (_mapView) renderMap();
+        showToast('Listing removed.', 'info');
       }
 
       // ── Notifications ────────────────────────────────────────────────────────
@@ -809,25 +1026,48 @@
       }
 
       // ── Post missing pet ─────────────────────────────────────────────────────
-      document.getElementById('post-form').addEventListener('submit', e => {
+      document.getElementById('post-form').addEventListener('submit', async e => {
         e.preventDefault();
         clearErrors(e.target);
 
-        const type    = document.getElementById('animal-type').value;
-        const name    = document.getElementById('pet-name').value.trim();
-        const colour  = document.getElementById('colour').value.trim();
-        const size    = document.getElementById('size').value;
-        const details = document.getElementById('extra-details').value.trim();
+        const type     = document.getElementById('animal-type').value;
+        const name     = document.getElementById('pet-name').value.trim();
+        const colour   = document.getElementById('colour').value.trim();
+        const size     = document.getElementById('size').value;
+        const details  = document.getElementById('extra-details').value.trim();
+        const contact  = document.getElementById('contact').value.trim();
+        const locEl    = document.getElementById('last-location');
+        const location = locEl.value.trim();
 
         let ok = true;
         if (!type) { showError('animal-type', 'Please select an animal type'); ok = false; }
         if (!name) { showError('pet-name', 'Please enter the pet\'s name');    ok = false; }
         if (!ok) return;
 
-        pets.push({ type, name, colour, size, details, postedAt: Date.now() });
+        const submitBtn = e.target.querySelector('.btn-primary');
+        submitBtn.disabled = true;
+        submitBtn.textContent = location ? 'Locating…' : 'Posting…';
+
+        let lat = locEl.dataset.lat ? parseFloat(locEl.dataset.lat) : null;
+        let lng = locEl.dataset.lng ? parseFloat(locEl.dataset.lng) : null;
+
+        if (location && !lat) {
+          try {
+            const res  = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1`);
+            const data = await res.json();
+            if (data.length > 0) { lat = parseFloat(data[0].lat); lng = parseFloat(data[0].lon); }
+          } catch { /* post without coords if geocoding fails */ }
+        }
+
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Post Missing Pet';
+
+        pets.push({ type, name, colour, size, details, contact, location, lat, lng, postedAt: Date.now() });
         savePets();
         addNotif(EMOJIS[type] || '🐾', `A missing ${type} named "${esc(name)}" has been posted.`);
         e.target.reset();
+        delete locEl.dataset.lat;
+        delete locEl.dataset.lng;
         showToast(`${name} has been posted as missing!`, 'success');
         goTo('page-browse');
       });
